@@ -1,0 +1,6 @@
+{
+  "name": "Internship Application Portal",
+  "description": "Comprehensive internship application, candidate tracking, and submissions review portal with internship terms and privacy notices.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

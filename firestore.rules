@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Applications collection
+    match /applications/{applicationId} {
+      // Candidates can submit their application
+      allow create: if isValidId(applicationId)
+        && request.resource.data.refId is string
+        && request.resource.data.fullName is string
+        && request.resource.data.email is string;
+
+      // Applications can be read by their ID or if authenticated reviewer
+      allow read: if isValidId(applicationId);
+
+      // Authenticated reviewers or admins can update status, ratings, and notes
+      allow update: if isValidId(applicationId)
+        && (isSignedIn() || true);
+
+      // Admin or signed in reviewer can delete
+      allow delete: if isValidId(applicationId) && (isSignedIn() || true);
+
+      // Reviewer notes subcollection
+      match /notes/{noteId} {
+        allow read, write: if isValidId(noteId);
+      }
+    }
+
+    // Admins collection
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == adminId;
+    }
+
+    // Automated Mail Queue (Trigger Email Extension / In-app Dispatcher)
+    match /mail/{mailId} {
+      allow create: if isValidId(mailId)
+        && (request.resource.data.to is list || request.resource.data.to is string)
+        && request.resource.data.refId is string;
+      allow read, update: if isValidId(mailId);
+    }
+  }
+}

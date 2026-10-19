@@ -1,0 +1,97 @@
+{
+  "entities": {
+    "Application": {
+      "title": "Application",
+      "description": "An internship candidate submission",
+      "type": "object",
+      "properties": {
+        "refId": { "type": "string" },
+        "fullName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "location": { "type": "string" },
+        "university": { "type": "string" },
+        "degree": { "type": "string" },
+        "major": { "type": "string" },
+        "graduationYear": { "type": "number" },
+        "gpa": { "type": "string" },
+        "track": { "type": "string" },
+        "trackTitle": { "type": "string" },
+        "experienceLevel": { "type": "string" },
+        "githubUrl": { "type": "string" },
+        "portfolioUrl": { "type": "string" },
+        "linkedinUrl": { "type": "string" },
+        "resumeFileName": { "type": "string" },
+        "statement": { "type": "string" },
+        "availableStartDate": { "type": "string" },
+        "preferredDuration": { "type": "string" },
+        "workAuthorization": { "type": "string" },
+        "agreedToTerms": { "type": "boolean" },
+        "agreedToPrivacy": { "type": "boolean" },
+        "status": { "type": "string" },
+        "rating": { "type": "number" },
+        "interviewDate": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["refId", "fullName", "email", "track", "university", "status"]
+    },
+    "ReviewerNote": {
+      "title": "ReviewerNote",
+      "description": "An evaluation note left by a reviewer or hiring manager",
+      "type": "object",
+      "properties": {
+        "author": { "type": "string" },
+        "authorRole": { "type": "string" },
+        "text": { "type": "string" },
+        "rating": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["author", "text", "createdAt"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Authorized reviewer or admissions administrator",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string" }
+      },
+      "required": ["email", "role"]
+    },
+    "Mail": {
+      "title": "Mail",
+      "description": "Queued automated transactional email for candidate notification",
+      "type": "object",
+      "properties": {
+        "to": { "type": "string", "format": "email" },
+        "subject": { "type": "string" },
+        "html": { "type": "string" },
+        "status": { "type": "string" },
+        "candidateName": { "type": "string" },
+        "refId": { "type": "string" },
+        "roleTitle": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["to", "subject", "status", "refId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/applications/{applicationId}": {
+      "schema": "Application",
+      "description": "Internship submissions collection"
+    },
+    "/applications/{applicationId}/notes/{noteId}": {
+      "schema": "ReviewerNote",
+      "description": "Evaluation notes for a candidate"
+    },
+    "/admins/{adminId}": {
+      "schema": "Admin",
+      "description": "Admins and reviewers collection"
+    },
+    "/mail/{mailId}": {
+      "schema": "Mail",
+      "description": "Automated email notifications queue"
+    }
+  }
+}
