@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
 import { UserSession, LumixoraApplication } from '../types';
 import { findApplicationByEmail, findApplicationByRefId } from '../lib/storage';
-import { generateConfirmationEmailHtml } from '../lib/emailService';
+import { 
+  generateConfirmationEmailHtml, 
+  getGmailComposeUrl, 
+  downloadEmailAsEml 
+} from '../lib/emailService';
 import { 
   User, 
   Mail, 
@@ -14,7 +18,8 @@ import {
   Send, 
   ShieldCheck, 
   FileText,
-  X
+  X,
+  Download
 } from 'lucide-react';
 
 interface CandidatePortalProps {
@@ -178,28 +183,50 @@ export const CandidatePortal: React.FC<CandidatePortalProps> = ({
             </div>
 
             {/* Email Confirmation Inspection Card */}
-            <div className="mt-6 p-4 rounded-2xl bg-violet-50/70 border border-violet-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-violet-600 text-white flex items-center justify-center flex-shrink-0">
-                  <Mail className="w-5 h-5" />
+            <div className="mt-6 p-5 rounded-2xl bg-violet-50/70 border border-violet-200">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-violet-600 text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                    <Mail className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900">
+                      Official Confirmation Letter
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      Generated for {candidateApp.email} [Ref: {candidateApp.refId}]
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-xs font-bold text-slate-900">
-                    Automated Confirmation Email Dispatched
-                  </h4>
-                  <p className="text-[11px] text-slate-500">
-                    Sent to {candidateApp.email} upon application submission.
-                  </p>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <a
+                    href={getGmailComposeUrl(candidateApp)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Open in Gmail</span>
+                  </a>
+
+                  <button
+                    onClick={() => downloadEmailAsEml(candidateApp)}
+                    className="px-3 py-1.5 rounded-xl bg-white hover:bg-violet-100/70 text-violet-700 text-xs font-bold border border-violet-200 transition-colors cursor-pointer shadow-2xs flex items-center gap-1.5"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download .eml</span>
+                  </button>
+
+                  <button
+                    onClick={() => setShowEmailModal(true)}
+                    className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold border border-slate-200 transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <span>View Letter</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
-
-              <button
-                onClick={() => setShowEmailModal(true)}
-                className="px-3.5 py-2 rounded-xl bg-white hover:bg-violet-100/70 text-violet-700 text-xs font-bold border border-violet-200 transition-colors cursor-pointer shadow-2xs flex items-center justify-center gap-1.5"
-              >
-                <span>View My Confirmation Email</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </button>
             </div>
           </div>
         </div>
@@ -241,21 +268,42 @@ export const CandidatePortal: React.FC<CandidatePortalProps> = ({
                 <Mail className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-base font-extrabold text-slate-900">Your Confirmation Email</h3>
+                <h3 className="text-base font-extrabold text-slate-900">Official Admissions Confirmation Email</h3>
                 <p className="text-xs text-slate-500">Delivered to: {candidateApp.email}</p>
               </div>
             </div>
 
-            <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 p-2 max-h-[65vh] overflow-y-auto">
+            <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 p-2 max-h-[65vh] overflow-y-auto mb-4">
               <div
                 className="bg-white rounded-xl shadow-xs"
                 dangerouslySetInnerHTML={{
-                  __html: generateConfirmationEmailHtml(candidateApp),
+                  __html: generateConfirmationEmailHtml(candidateApp).html,
                 }}
               />
             </div>
 
-            <div className="mt-4 flex justify-end">
+            <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <a
+                  href={getGmailComposeUrl(candidateApp)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white flex items-center gap-1.5 transition-colors"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Send to My Gmail</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => downloadEmailAsEml(candidateApp)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Download .eml</span>
+                </button>
+              </div>
+
               <button
                 onClick={() => setShowEmailModal(false)}
                 className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition-colors"

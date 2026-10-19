@@ -2,7 +2,14 @@ import React, { useState } from 'react';
 import { LumixoraRole, LumixoraApplication, UserSession } from '../types';
 import { LUMIXORA_ROLES } from '../data/mockData';
 import { submitApplication, registerCandidateAccount, saveStoredSession } from '../lib/storage';
-import { sendApplicationConfirmationEmail, generateConfirmationEmailHtml } from '../lib/emailService';
+import { 
+  sendApplicationConfirmationEmail, 
+  generateConfirmationEmailHtml,
+  getGmailComposeUrl,
+  getMailtoUrl,
+  downloadEmailAsEml,
+  getEmailSettings
+} from '../lib/emailService';
 import { 
   Sparkles, 
   CheckCircle2, 
@@ -21,7 +28,10 @@ import {
   Eye,
   EyeOff,
   UserCheck,
-  UserPlus
+  UserPlus,
+  Download,
+  Send,
+  Printer
 } from 'lucide-react';
 
 interface ApplicationFormProps {
@@ -955,24 +965,52 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({
               </p>
             </div>
 
-            {/* Email Dispatch Status Pill */}
-            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 mb-4 text-left flex items-start gap-2.5">
-              <Mail className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" />
-              <div className="text-xs">
-                <span className="font-bold text-emerald-900 block">Automated Confirmation Email Queued</span>
-                <span className="text-emerald-700">
-                  Confirmation sent to <strong className="text-emerald-950">{submittedApp.email}</strong> via Firebase Mail Service.
-                </span>
+            {/* Email Dispatch Card & Instant Delivery Actions */}
+            <div className="bg-emerald-50/90 border border-emerald-200 rounded-2xl p-4 mb-4 text-left">
+              <div className="flex items-start gap-2.5 mb-3">
+                <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                  <Mail className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold text-emerald-950 block text-xs">
+                    Official Confirmation Letter Generated
+                  </span>
+                  <span className="text-emerald-800 text-[11px] leading-relaxed block mt-0.5">
+                    Recorded for <strong className="text-emerald-950">{submittedApp.email}</strong>. Use the direct actions below to receive or open your official confirmation instantly in your inbox:
+                  </span>
+                </div>
+              </div>
+
+              {/* Direct Instant Action Buttons */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-emerald-200/80">
+                <a
+                  href={getGmailComposeUrl(submittedApp)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-2 px-3 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-all flex items-center justify-center gap-1.5 shadow-sm text-center"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Open &amp; Send in Gmail</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => downloadEmailAsEml(submittedApp)}
+                  className="py-2 px-3 rounded-xl text-xs font-bold bg-white hover:bg-emerald-100/70 text-emerald-900 border border-emerald-300 transition-colors flex items-center justify-center gap-1.5 cursor-pointer text-center"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>Download .eml Receipt</span>
+                </button>
               </div>
             </div>
 
             {/* Candidate Account Created Confirmation */}
-            <div className="bg-violet-50/70 border border-violet-200 rounded-2xl p-3 mb-6 text-left flex items-start gap-2.5">
+            <div className="bg-violet-50/70 border border-violet-200 rounded-2xl p-3 mb-5 text-left flex items-start gap-2.5">
               <UserCheck className="w-4 h-4 text-violet-600 mt-0.5 flex-shrink-0" />
               <div className="text-xs">
                 <span className="font-bold text-violet-900 block">Candidate Account Active</span>
                 <span className="text-violet-700">
-                  Your candidate account is linked. Log in anytime with <strong className="text-violet-950">{submittedApp.email}</strong> to monitor live updates.
+                  Your candidate account is linked. Log in anytime with <strong className="text-violet-950">{submittedApp.email}</strong> to monitor live updates and review letters.
                 </span>
               </div>
             </div>
@@ -983,8 +1021,8 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({
                 onClick={() => setShowEmailPreview(true)}
                 className="w-full py-2.5 px-4 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 transition-colors flex items-center justify-center gap-2 cursor-pointer border border-slate-200"
               >
-                <Mail className="w-3.5 h-3.5 text-violet-600" />
-                <span>View Sent Email Confirmation Preview</span>
+                <Eye className="w-3.5 h-3.5 text-violet-600" />
+                <span>View Full Official Email Confirmation</span>
               </button>
 
               <button
@@ -1011,7 +1049,7 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({
       {/* Interactive Email Preview Modal */}
       {showEmailPreview && submittedApp && (
         <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-2xl w-full p-6 shadow-2xl relative animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-2xl w-full p-6 shadow-2xl relative animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto text-left">
             <button
               onClick={() => setShowEmailPreview(false)}
               className="absolute top-5 right-5 p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
@@ -1022,8 +1060,8 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({
             <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
               <Mail className="w-5 h-5 text-violet-600" />
               <div>
-                <h3 className="text-base font-bold text-slate-900">Automated Confirmation Email Preview</h3>
-                <p className="text-xs text-slate-500">Live transactional email triggered via Firebase Firestore Queue</p>
+                <h3 className="text-base font-bold text-slate-900">Official Admissions Confirmation Letter</h3>
+                <p className="text-xs text-slate-500">Issued for Lumixora Internship Program — Batch 01</p>
               </div>
             </div>
 
@@ -1035,17 +1073,38 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({
 
             {/* Email HTML Container */}
             <div 
-              className="border border-slate-200 rounded-2xl overflow-hidden shadow-inner bg-slate-100 p-2"
+              className="border border-slate-200 rounded-2xl overflow-hidden shadow-inner bg-slate-100 p-2 mb-4"
               dangerouslySetInnerHTML={{ __html: generateConfirmationEmailHtml(submittedApp).html }}
             />
 
-            <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end">
+            <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <a
+                  href={getGmailComposeUrl(submittedApp)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white flex items-center gap-1.5 transition-colors"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Send to My Gmail</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => downloadEmailAsEml(submittedApp)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Download .eml</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setShowEmailPreview(false)}
-                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold cursor-pointer"
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold cursor-pointer"
               >
-                Close Email Preview
+                Done
               </button>
             </div>
           </div>

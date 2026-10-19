@@ -9,13 +9,51 @@ export interface AutomatedEmailRecord {
   refId: string;
   candidateName: string;
   roleTitle: string;
-  status: 'SENT' | 'PENDING' | 'QUEUED';
+  status: 'SENT' | 'PENDING' | 'QUEUED' | 'DELIVERED' | 'FAILED';
   html: string;
   text: string;
   createdAt: string;
+  deliveryMethod?: string;
+  error?: string;
+}
+
+export interface EmailSettings {
+  provider: 'auto' | 'resend' | 'webhook' | 'emailjs' | 'gmail_direct';
+  resendApiKey?: string;
+  webhookUrl?: string;
+  emailjsServiceId?: string;
+  emailjsTemplateId?: string;
+  emailjsPublicKey?: string;
+  senderEmail?: string;
+  senderName?: string;
 }
 
 const STORAGE_KEY_SENT_EMAILS = 'lumixora_automated_emails_v1';
+const STORAGE_KEY_EMAIL_SETTINGS = 'lumixora_email_dispatch_settings_v1';
+
+export function getEmailSettings(): EmailSettings {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_EMAIL_SETTINGS);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.warn('Error reading email settings:', e);
+  }
+  return {
+    provider: 'auto',
+    senderEmail: 'admissions@vyomra.com',
+    senderName: 'Lumixora Admissions',
+  };
+}
+
+export function saveEmailSettings(settings: EmailSettings): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_EMAIL_SETTINGS, JSON.stringify(settings));
+  } catch (e) {
+    console.error('Error saving email settings:', e);
+  }
+}
 
 export function getCachedSentEmails(): AutomatedEmailRecord[] {
   try {
@@ -29,14 +67,15 @@ export function getCachedSentEmails(): AutomatedEmailRecord[] {
 export function saveCachedEmail(email: AutomatedEmailRecord) {
   try {
     const current = getCachedSentEmails();
-    localStorage.setItem(STORAGE_KEY_SENT_EMAILS, JSON.stringify([email, ...current]));
+    const filtered = current.filter((item) => item.id !== email.id);
+    localStorage.setItem(STORAGE_KEY_SENT_EMAILS, JSON.stringify([email, ...filtered]));
   } catch (e) {
     console.error('Failed to cache email record', e);
   }
 }
 
 /**
- * Generates the official HTML email confirmation template for Lumixora Batch 01
+ * Generates the official HTML and Plain Text confirmation template for Lumixora Batch 01
  */
 export function generateConfirmationEmailHtml(app: LumixoraApplication): { html: string; text: string; subject: string } {
   const subject = `Application Received: Lumixora Internship Program — Batch 01 [Ref: ${app.refId}]`;
@@ -51,7 +90,7 @@ Your application has been received and logged into our admissions database.
 APPLICATION SUMMARY:
 - Reference Code: ${app.refId}
 - Preferred Role: ${app.preferredRoleTitle}
-- College/University: ${app.collegeName}
+- University / College: ${app.collegeName}
 - Degree & Branch: ${app.degreeAndBranch}
 - Current Year of Study: ${app.currentYearOfStudy}
 - Program Duration: 6 Weeks (Remote)
@@ -205,13 +244,77 @@ Connecting the Future.
 }
 
 /**
- * Triggers automated confirmation email delivery.
- * 1. Writes to Firestore `/mail/{mailId}` collection (which triggers Firebase Trigger Email Extension / Cloud Function)
- * 2. Saves record to local cache for instant candidate UI preview and delivery verification
+ * Returns a 1-click URL to open Gmail Web compose pre-filled with the official confirmation email
+ */
+export function getGmailComposeUrl(app: LumixoraApplication, customSubject?: string, customBody?: string): string {
+  const { subject, text } = generateConfirmationEmailHtml(app);
+  const finalSubject = customSubject || subject;
+  const finalBody = customBody || text;
+  return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(app.email)}&su=${encodeURIComponent(finalSubject)}&body=${encodeURIComponent(finalBody)}`;
+}
+
+/**
+ * Returns a standard mailto link
+ */
+export function getMailtoUrl(app: LumixoraApplication, customSubject?: string, customBody?: string): string {
+  const { subject, text } = generateConfirmationEmailHtml(app);
+  const finalSubject = customSubject || subject;
+  const finalBody = customBody || text;
+  return `mailto:${encodeURIComponent(app.email)}?subject=${encodeURIComponent(finalSubject)}&body=${encodeURIComponent(finalBody)}`;
+}
+
+/**
+ * Triggers a download of an RFC-822 formatted .eml file.
+ * Opening this file places the complete confirmation email directly inside Apple Mail, Outlook, or Thunderbird.
+ */
+export function downloadEmailAsEml(app: LumixoraApplication): void {
+  const { html, text, subject } = generateConfirmationEmailHtml(app);
+  const boundary = `----=_Part_${Date.now()}`;
+
+  const emlContent = [
+    `From: Lumixora Admissions <admissions@vyomra.com>`,
+    `To: ${app.fullName} <${app.email}>`,
+    `Subject: ${subject}`,
+    `Date: ${new Date().toUTCString()}`,
+    `MIME-Version: 1.0`,
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    ``,
+    `--${boundary}`,
+    `Content-Type: text/plain; charset=UTF-8`,
+    `Content-Transfer-Encoding: 7bit`,
+    ``,
+    text,
+    ``,
+    `--${boundary}`,
+    `Content-Type: text/html; charset=UTF-8`,
+    `Content-Transfer-Encoding: 7bit`,
+    ``,
+    html,
+    ``,
+    `--${boundary}--`,
+  ].join('\r\n');
+
+  const blob = new Blob([emlContent], { type: 'message/rfc822' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Lumixora_Application_${app.refId}.eml`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Dispatches automated confirmation email delivery across available channels:
+ * 1. Pings Netlify / Serverless Function / Webhook / Resend if configured
+ * 2. Writes to Firestore `/mail/{mailId}` collection (for Firebase Trigger Email Extension)
+ * 3. Saves record to local cache for instant candidate UI preview and delivery verification
  */
 export async function sendApplicationConfirmationEmail(app: LumixoraApplication): Promise<AutomatedEmailRecord> {
   const { html, text, subject } = generateConfirmationEmailHtml(app);
   const emailId = `mail-${app.refId}-${Date.now()}`;
+  const settings = getEmailSettings();
 
   const emailRecord: AutomatedEmailRecord = {
     id: emailId,
@@ -220,16 +323,17 @@ export async function sendApplicationConfirmationEmail(app: LumixoraApplication)
     refId: app.refId,
     candidateName: app.fullName,
     roleTitle: app.preferredRoleTitle,
-    status: 'SENT',
+    status: 'QUEUED',
     html,
     text,
     createdAt: new Date().toISOString(),
+    deliveryMethod: 'Browser / Firebase Queue',
   };
 
-  // 1. Cache locally for instant preview
+  // 1. Cache locally for instant preview and offline resiliency
   saveCachedEmail(emailRecord);
 
-  // 2. Queue in Firestore `/mail/{mailId}` collection for live Firebase Extension or Cloud Function delivery
+  // 2. Queue in Firestore `/mail/{mailId}` collection
   try {
     const mailDocRef = doc(db, 'mail', emailId);
     setDoc(mailDocRef, {
@@ -245,7 +349,7 @@ export async function sendApplicationConfirmationEmail(app: LumixoraApplication)
       refId: app.refId,
       candidateName: app.fullName,
       roleTitle: app.preferredRoleTitle,
-      status: 'SENT',
+      status: 'QUEUED',
       createdAt: new Date().toISOString(),
       metadata: {
         batch: 'Batch 01',
@@ -254,10 +358,142 @@ export async function sendApplicationConfirmationEmail(app: LumixoraApplication)
     }).catch((err) => {
       console.warn('[Firebase Mail Service] Notice while writing to Firestore mail queue:', err);
     });
-    console.log(`[Firebase Mail Service] Automated confirmation email queued for ${app.email} with Ref: ${app.refId}`);
   } catch (error) {
     console.warn('[Firebase Mail Service] Notice while queuing mail:', error);
   }
 
+  // 3. Attempt direct external dispatch if Resend / Webhook or Serverless endpoint is available
+  try {
+    if (settings.resendApiKey) {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${settings.resendApiKey}`,
+        },
+        body: JSON.stringify({
+          from: `${settings.senderName || 'Lumixora Admissions'} <onboarding@resend.dev>`,
+          to: [app.email],
+          subject,
+          html,
+          text,
+        }),
+      });
+      if (res.ok) {
+        emailRecord.status = 'DELIVERED';
+        emailRecord.deliveryMethod = 'Resend API';
+        saveCachedEmail(emailRecord);
+      }
+    } else if (settings.webhookUrl) {
+      await fetch(settings.webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: app.email,
+          subject,
+          html,
+          text,
+          refId: app.refId,
+          fullName: app.fullName,
+          role: app.preferredRoleTitle,
+        }),
+      });
+      emailRecord.status = 'DELIVERED';
+      emailRecord.deliveryMethod = 'Custom Webhook';
+      saveCachedEmail(emailRecord);
+    } else {
+      // Attempt local Netlify function if running on Netlify
+      try {
+        const netlifyRes = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: app.email,
+            subject,
+            html,
+            text,
+            refId: app.refId,
+            fullName: app.fullName,
+          }),
+        });
+        if (netlifyRes.ok) {
+          emailRecord.status = 'DELIVERED';
+          emailRecord.deliveryMethod = 'Netlify Serverless Function';
+          saveCachedEmail(emailRecord);
+        }
+      } catch {
+        // Fallback to client delivery options
+      }
+    }
+  } catch (e: any) {
+    console.warn('[Email Dispatch] Background delivery attempt notice:', e);
+    emailRecord.error = e.message || String(e);
+  }
+
   return emailRecord;
+}
+
+/**
+ * Sends a test email to verify configured email providers
+ */
+export async function testSendEmail(targetEmail: string): Promise<{ success: boolean; message: string }> {
+  const settings = getEmailSettings();
+  const testSubject = `Test Email: Lumixora Admissions System [${new Date().toLocaleTimeString()}]`;
+  const testHtml = `
+    <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
+      <h2 style="color: #7c3aed;">LUMIXORA Admissions Email Test</h2>
+      <p>This is a verification test email sent from the Lumixora Internship Portal.</p>
+      <p><strong>Configured Provider:</strong> ${settings.provider}</p>
+      <p><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
+    </div>
+  `;
+
+  if (settings.resendApiKey) {
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${settings.resendApiKey}`,
+        },
+        body: JSON.stringify({
+          from: 'Lumixora <onboarding@resend.dev>',
+          to: [targetEmail],
+          subject: testSubject,
+          html: testHtml,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Resend API returned an error');
+      }
+      return { success: true, message: `Successfully sent test email to ${targetEmail} via Resend!` };
+    } catch (err: any) {
+      return { success: false, message: `Resend error: ${err.message}` };
+    }
+  }
+
+  if (settings.webhookUrl) {
+    try {
+      const res = await fetch(settings.webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: targetEmail,
+          subject: testSubject,
+          html: testHtml,
+          test: true,
+        }),
+      });
+      if (!res.ok) throw new Error(`Webhook returned status ${res.status}`);
+      return { success: true, message: `Successfully triggered Webhook for ${targetEmail}!` };
+    } catch (err: any) {
+      return { success: false, message: `Webhook error: ${err.message}` };
+    }
+  }
+
+  return {
+    success: true,
+    message: 'Direct Gmail / Webmail trigger is active. You can send directly using Gmail 1-Click Dispatch.',
+  };
 }

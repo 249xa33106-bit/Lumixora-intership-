@@ -36,11 +36,23 @@ import {
   Sparkles,
   LogIn,
   LogOut,
-  User
+  User,
+  Settings,
+  Send,
+  Check
 } from 'lucide-react';
 import { auth, githubAuthProvider, googleAuthProvider } from '../lib/firebase';
 import { signInWithPopup } from 'firebase/auth';
-import { generateConfirmationEmailHtml } from '../lib/emailService';
+import { 
+  generateConfirmationEmailHtml, 
+  getGmailComposeUrl, 
+  getMailtoUrl, 
+  downloadEmailAsEml,
+  getEmailSettings,
+  saveEmailSettings,
+  testSendEmail,
+  EmailSettings
+} from '../lib/emailService';
 
 interface SubmissionsDashboardProps {
   applications: LumixoraApplication[];
@@ -82,11 +94,40 @@ export const SubmissionsDashboard: React.FC<SubmissionsDashboardProps> = ({
   const [interviewDateInput, setInterviewDateInput] = useState('2025-03-01 at 4:00 PM IST');
   const [showInterviewModal, setShowInterviewModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [emailSettings, setEmailSettings] = useState<EmailSettings>(getEmailSettings());
+  const [testEmailRecipient, setTestEmailRecipient] = useState(session.email || '249xa33106@gmail.com');
+  const [isSendingTest, setIsSendingTest] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
     setNotification(msg);
     setTimeout(() => setNotification(null), 3000);
+  };
+
+  const handleRunEmailTest = async () => {
+    if (!testEmailRecipient.trim()) return;
+    setIsSendingTest(true);
+    setTestResult(null);
+    try {
+      const res = await testSendEmail(testEmailRecipient.trim());
+      setTestResult(res);
+      if (res.success) {
+        showToast('Email test completed');
+      }
+    } catch (err: any) {
+      setTestResult({ success: false, message: err.message || 'Test failed' });
+    } finally {
+      setIsSendingTest(false);
+    }
+  };
+
+  const handleSaveEmailConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    saveEmailSettings(emailSettings);
+    showToast('Email dispatch settings saved');
+    setShowSettingsModal(false);
   };
 
   // Metrics
@@ -535,6 +576,14 @@ export const SubmissionsDashboard: React.FC<SubmissionsDashboardProps> = ({
             <ExternalLink className="w-3 h-3 opacity-70" />
           </a>
           <button
+            onClick={() => setShowSettingsModal(true)}
+            title="Configure automated email dispatch or test send"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition-colors cursor-pointer shadow-xs"
+          >
+            <Mail className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Email Dispatch</span>
+          </button>
+          <button
             onClick={handleExportCSV}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 transition-colors cursor-pointer shadow-xs"
           >
@@ -808,18 +857,35 @@ export const SubmissionsDashboard: React.FC<SubmissionsDashboardProps> = ({
                 <p className="text-xs text-slate-500">
                   {activeCandidate.email} • {activeCandidate.phone}
                 </p>
-                <div className="mt-2 flex items-center gap-2">
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <a
+                    href={getGmailComposeUrl(activeCandidate)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-colors"
+                    title="Send official email to candidate via Gmail"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Send via Gmail</span>
+                  </a>
+
                   <button
                     type="button"
                     onClick={() => setShowEmailModal(true)}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100 transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100 transition-colors cursor-pointer"
                   >
-                    <Mail className="w-3 h-3 text-violet-600" />
-                    <span>View Sent Confirmation Email</span>
+                    <Eye className="w-3.5 h-3.5 text-violet-600" />
+                    <span>Preview Letter</span>
                   </button>
-                  <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-bold">
-                    Triggered
-                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => downloadEmailAsEml(activeCandidate)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Download .eml</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1120,7 +1186,28 @@ export const SubmissionsDashboard: React.FC<SubmissionsDashboardProps> = ({
               dangerouslySetInnerHTML={{ __html: generateConfirmationEmailHtml(activeCandidate).html }}
             />
 
-            <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end">
+            <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <a
+                  href={getGmailComposeUrl(activeCandidate)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Send via Gmail</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => downloadEmailAsEml(activeCandidate)}
+                  className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Download .eml</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setShowEmailModal(false)}
@@ -1129,6 +1216,166 @@ export const SubmissionsDashboard: React.FC<SubmissionsDashboardProps> = ({
                 Close Email Preview
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email Dispatch Configuration & Test Modal */}
+      {showSettingsModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl relative animate-in fade-in zoom-in duration-200 max-h-[92vh] overflow-y-auto text-left">
+            <button
+              onClick={() => setShowSettingsModal(false)}
+              className="absolute top-5 right-5 p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2.5 mb-2">
+              <div className="w-9 h-9 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center shadow-xs">
+                <Mail className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900">Email Delivery &amp; Dispatch Settings</h3>
+                <p className="text-xs text-slate-500">Configure how confirmation and interview emails reach applicants</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveEmailConfig} className="space-y-4 mt-5">
+              {/* Delivery Mode Info Banner */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs text-slate-700 space-y-1.5">
+                <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span>1-Click Gmail &amp; .eml Delivery are Always Active</span>
+                </div>
+                <p className="text-slate-500 text-[11px] leading-relaxed">
+                  Every applicant sees an instant &ldquo;Open &amp; Send in Gmail&rdquo; and &ldquo;Download .eml&rdquo; button immediately upon submitting. You can also send directly to them from the reviewer drawer.
+                </p>
+              </div>
+
+              {/* Automated Provider Option */}
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  Automated Background Dispatch Provider
+                </label>
+                <select
+                  value={emailSettings.provider}
+                  onChange={(e) => setEmailSettings({ ...emailSettings, provider: e.target.value as any })}
+                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-violet-600"
+                >
+                  <option value="auto">Auto-detect (Netlify Functions / Fallback)</option>
+                  <option value="resend">Resend API (Recommended for 100% automated delivery)</option>
+                  <option value="webhook">Custom Webhook (Zapier / Make / n8n / Netlify)</option>
+                  <option value="gmail_direct">Direct Gmail 1-Click (No API key needed)</option>
+                </select>
+              </div>
+
+              {emailSettings.provider === 'resend' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Resend API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={emailSettings.resendApiKey || ''}
+                    onChange={(e) => setEmailSettings({ ...emailSettings, resendApiKey: e.target.value })}
+                    placeholder="re_123456789..."
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-mono"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Free keys from <a href="https://resend.com" target="_blank" rel="noreferrer" className="text-violet-600 underline">resend.com</a> send up to 3,000 emails/month free.
+                  </p>
+                </div>
+              )}
+
+              {emailSettings.provider === 'webhook' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Custom Webhook URL
+                  </label>
+                  <input
+                    type="url"
+                    value={emailSettings.webhookUrl || ''}
+                    onChange={(e) => setEmailSettings({ ...emailSettings, webhookUrl: e.target.value })}
+                    placeholder="https://hooks.zapier.com/... or https://maker.ifttt.com/..."
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-mono"
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Sender Display Name
+                  </label>
+                  <input
+                    type="text"
+                    value={emailSettings.senderName || 'Lumixora Admissions'}
+                    onChange={(e) => setEmailSettings({ ...emailSettings, senderName: e.target.value })}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Official Admissions Email
+                  </label>
+                  <input
+                    type="email"
+                    value={emailSettings.senderEmail || 'admissions@vyomra.com'}
+                    onChange={(e) => setEmailSettings({ ...emailSettings, senderEmail: e.target.value })}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900"
+                  />
+                </div>
+              </div>
+
+              {/* Test Email Section */}
+              <div className="mt-5 pt-4 border-t border-slate-200">
+                <span className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
+                  Test Email Dispatcher
+                </span>
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    value={testEmailRecipient}
+                    onChange={(e) => setTestEmailRecipient(e.target.value)}
+                    placeholder="Enter email to test (e.g. 249xa33106@gmail.com)"
+                    className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleRunEmailTest}
+                    disabled={isSendingTest || !testEmailRecipient.trim()}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                  >
+                    {isSendingTest ? 'Testing...' : 'Send Test'}
+                  </button>
+                </div>
+
+                {testResult && (
+                  <div className={`mt-2.5 p-3 rounded-xl text-xs border ${testResult.success ? 'bg-emerald-50 text-emerald-900 border-emerald-200' : 'bg-rose-50 text-rose-900 border-rose-200'}`}>
+                    <div className="font-bold">{testResult.success ? 'Test Successful' : 'Notice / Error'}</div>
+                    <div className="text-[11px] mt-0.5">{testResult.message}</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer Buttons */}
+              <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowSettingsModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer shadow-sm"
+                >
+                  Save Dispatch Settings
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
